@@ -1,22 +1,64 @@
 name: package-artifactory-cpp-ce
-on: workflow_dispatch
-permissions: { contents: write }
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with: { repository: jfrog/charts, path: charts }
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official JFrog charts
+        uses: actions/checkout@v4
+        with:
+          repository: jfrog/charts
+          path: jfrog-charts
+
       - uses: azure/setup-helm@v4
-      - run: |
-          helm repo add jfrog https://charts.jfrog.io
-          cd charts/stable/artifactory-cpp-ce
-          helm dependency build
-          helm package . -d /tmp/out
-      - uses: actions/upload-artifact@v4
-        with: { name: chart, path: /tmp/out/*.tgz }
-      - name: Commit packaged chart
+        with:
+          version: v3.17.3
+
+      - name: Build and package dependencies
+        shell: bash
         run: |
-          mkdir -p dist && cp /tmp/out/*.tgz dist/
-          git config user.name gha && git config user.email gha@users.noreply.github.com
-          git add dist && git commit -m "packaged chart" && git push
+          set -euo pipefail
+
+          helm repo add jfrog https://charts.jfrog.io
+          helm repo update
+
+          helm dependency build jfrog-charts/stable/artifactory
+
+          mkdir -p jfrog-charts/stable/artifactory-cpp-ce/charts
+          helm package jfrog-charts/stable/artifactory \
+            --destination jfrog-charts/stable/artifactory-cpp-ce/charts
+
+          helm dependency build jfrog-charts/stable/artifactory-cpp-ce
+
+          mkdir -p dist
+          helm package jfrog-charts/stable/artifactory-cpp-ce \
+            --destination dist
+
+      - name: Upload packaged chart
+        uses: actions/upload-artifact@v4
+        with:
+          name: chart
+          path: dist/*.tgz
+
+      - name: Commit packaged chart
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add dist/
+          if git diff --cached --quiet; then
+            echo "Packaged chart is already up to date."
+          else
+            git commit -m "Update packaged Artifactory C++ CE chart"
+            git push
+          fi
