@@ -9,6 +9,7 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout your repository
         uses: actions/checkout@v4
@@ -19,7 +20,8 @@ jobs:
           repository: jfrog/charts
           path: jfrog-charts
 
-      - uses: azure/setup-helm@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
         with:
           version: v3.17.3
 
@@ -31,11 +33,13 @@ jobs:
           helm repo add jfrog https://charts.jfrog.io
           helm repo update
 
+          # Download PostgreSQL into the base Artifactory chart.
           helm dependency build jfrog-charts/stable/artifactory
 
+          # Supply the unpacked dependency expected by the C++ CE chart.
           mkdir -p jfrog-charts/stable/artifactory-cpp-ce/charts
-          helm package jfrog-charts/stable/artifactory \
-            --destination jfrog-charts/stable/artifactory-cpp-ce/charts
+          cp -a jfrog-charts/stable/artifactory \
+            jfrog-charts/stable/artifactory-cpp-ce/charts/artifactory
 
           helm dependency build jfrog-charts/stable/artifactory-cpp-ce
 
@@ -48,16 +52,19 @@ jobs:
         with:
           name: chart
           path: dist/*.tgz
+          if-no-files-found: error
 
       - name: Commit packaged chart
         shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add dist/
           if git diff --cached --quiet; then
-            echo "Packaged chart is already up to date."
+            echo "No changes to commit."
           else
             git commit -m "Update packaged Artifactory C++ CE chart"
             git push
